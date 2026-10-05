@@ -1,0 +1,61 @@
+<div class="app-shell">
+  <aside class="sidebar">
+    <a class="brand" href="#top" aria-label="SFS device monitoring home">
+      <span class="brand-mark">SFS</span>
+      <span class="brand-copy"><strong>Signal Foundry</strong><small>DEVICE OPERATIONS</small></span>
+    </a>
+    <div class="sidebar-heading"><span>Production line</span><span class="asset-count">{{ devices.length | number:'2.0' }}</span></div>
+    <nav class="device-list" aria-label="Devices">
+      <button *ngFor="let device of devices" class="device-option" [class.selected]="device === selectedDevice" (click)="selectDevice(device)" [attr.aria-current]="device === selectedDevice ? 'page' : null">
+        <span [class]="'device-light ' + statusClass(deviceStatuses[device])"></span>
+        <span class="device-option-copy"><strong>Machine {{ device }}</strong><small>{{ deviceStatuses[device] || 'Awaiting signal' }}</small></span>
+        <span class="device-arrow" *ngIf="device === selectedDevice">&#8594;</span>
+      </button>
+      <p class="sidebar-empty" *ngIf="!devices.length && !loadingDevices">No devices available</p>
+      <p class="sidebar-loading" *ngIf="loadingDevices">Loading devices...</p>
+    </nav>
+    <div class="sidebar-foot"><span class="signal-orbit" [class.connected]="streamConnected"></span><span><strong>{{ streamConnected ? 'Live connection' : 'Connecting' }}</strong><small>{{ selectedDevice ? 'Machine ' + selectedDevice : 'Select a machine' }}</small></span></div>
+  </aside>
+
+  <main class="workspace" id="top">
+    <header class="topbar">
+      <div class="breadcrumb">Operations <span>/</span> Performance</div>
+      <div class="topbar-right"><span class="updated-at" *ngIf="lastEventAt">Updated {{ lastEventAt | date:'HH:mm:ss' }}</span>
+        <span class="environment" [style.--environment-color]="config?.environmentColour || '#738079'"><span class="environment-dot"></span>{{ config?.environmentName || 'Loading environment' }}</span>
+      </div>
+    </header>
+    <div class="error-banner" role="alert" *ngIf="errorMessage"><span class="error-symbol">!</span><span>{{ errorMessage }}</span><button type="button" class="dismiss-error" aria-label="Dismiss error" (click)="errorMessage = ''">&#215;</button></div>
+
+    <section class="page-heading">
+      <div><p class="eyebrow">MANUFACTURING INTELLIGENCE <span></span> LIVE MONITOR</p><h1>Machine performance</h1><p class="page-subtitle">Production health and order output across your floor.</p></div>
+      <div class="heading-meta" *ngIf="selectedDevice"><span class="meta-label">SELECTED ASSET</span><strong>Machine {{ selectedDevice }}</strong></div>
+    </section>
+
+    <ng-container *ngIf="selectedDevice; else noSelection">
+      <section [class]="'machine-banner ' + statusClass(currentStatus)">
+        <div class="machine-state"><span class="state-indicator"><span></span></span><div><span class="meta-label">MACHINE STATE</span><strong>{{ currentStatus || 'Connecting to machine' }}</strong></div></div>
+        <div class="state-divider"></div>
+        <div class="machine-message"><span class="meta-label">{{ currentStatus === 'running' ? 'PRODUCTION STATUS' : 'ATTENTION' }}</span><strong>{{ stateMessage }}</strong></div>
+        <div class="stream-state"><span class="stream-pulse" [class.connected]="streamConnected"></span>{{ streamConnected ? 'STREAMING' : 'RECONNECTING' }}</div>
+      </section>
+
+      <section class="metric-grid" aria-label="Current production metrics">
+        <article class="metric-panel rate-metric"><div class="metric-top"><span class="metric-label">CURRENT RATE</span><span class="metric-mark">PPM</span></div><div class="metric-value">{{ currentRate !== null ? (currentRate | number:'1.0-1') : '--' }}<span>parts/min</span></div><p class="metric-note"><span class="tiny-live"></span>Live machine output</p></article>
+        <article class="metric-panel output-metric"><div class="metric-top"><span class="metric-label">OUTPUT THIS SESSION</span><span class="metric-mark">PARTS</span></div><div class="metric-value">{{ producedThisSession | number:'1.0-0' }}<span>parts</span></div><p class="metric-note">Since machine selection</p></article>
+        <article class="metric-panel order-metric"><div class="metric-top"><span class="metric-label">ACTIVE ORDER</span><span class="metric-mark">{{ orderInfo?.orderNumber ? '#' + orderInfo?.orderNumber : 'ORDER' }}</span></div><div class="metric-value">{{ orderProgress !== null ? (orderProgress | number:'1.0-0') + '%' : '--' }}<span>complete</span></div><div class="progress-track" role="progressbar" [attr.aria-valuenow]="orderProgress || 0" aria-valuemin="0" aria-valuemax="100" [attr.aria-label]="'Order ' + (orderInfo?.orderNumber || '') + ' progress'"><span [style.width.%]="orderProgress || 0"></span></div><p class="metric-note" *ngIf="orderInfo">{{ orderInfo.productionState | number }} / {{ orderInfo.productionTarget | number }} pieces</p><p class="metric-note" *ngIf="!orderInfo">Waiting for order data</p></article>
+      </section>
+
+      <section class="chart-grid" aria-label="Production history">
+        <article class="chart-panel"><div class="panel-heading"><div><span class="panel-index">01</span><h2>Parts per minute</h2></div><span class="chart-range">SINCE SELECTION</span></div><div class="chart-wrap"><svg #rateChart class="history-chart" viewBox="0 0 640 240" role="img" aria-label="Historic parts per minute"></svg><p class="chart-empty" *ngIf="!rateHistory.length">Waiting for production data</p></div><div class="chart-legend"><span class="legend-swatch rate-swatch"></span>Actual output <span class="legend-tail">{{ rateHistory.length }} readings</span></div></article>
+        <article class="chart-panel"><div class="panel-heading"><div><span class="panel-index">02</span><h2>Parts produced</h2></div><span class="chart-range">SESSION TOTAL</span></div><div class="chart-wrap"><svg #outputChart class="history-chart" viewBox="0 0 640 240" role="img" aria-label="Cumulative parts produced since selection"></svg><p class="chart-empty" *ngIf="!outputHistory.length">Waiting for production data</p></div><div class="chart-legend"><span class="legend-swatch output-swatch"></span>Cumulative output <span class="legend-tail">{{ producedThisSession | number:'1.0-0' }} parts</span></div></article>
+      </section>
+
+      <section class="interruptions-panel"><div class="panel-heading interruption-heading"><div><span class="panel-index">03</span><h2>Production interruptions</h2></div><span class="interrupt-count">{{ interruptions.length }} RECENT</span></div>
+        <div class="interruptions-table" *ngIf="interruptions.length; else noInterruptions"><div class="interrupt-row" *ngFor="let interruption of interruptions"><span class="interrupt-icon" [class.maintenance-icon]="interruption.status === 'maintenance'">!</span><span class="interrupt-type"><strong>{{ interruption.status === 'maintenance' ? 'Maintenance' : 'Production stopped' }}</strong><small>Machine {{ selectedDevice }}</small></span><span class="interrupt-time">{{ interruption.startedAt | date:'MMM d, HH:mm:ss' }}</span><span class="interrupt-duration">{{ interruption.durationSeconds !== null ? (interruption.durationSeconds | number:'1.0-0') + ' sec' : 'In progress' }}</span></div></div>
+        <ng-template #noInterruptions><p class="no-interruptions"><span>&#10003;</span> No production interruptions recorded during this session.</p></ng-template>
+      </section>
+      <footer class="workspace-footer"><span>SIGNAL FOUNDRY <span class="footer-separator">/</span> PRODUCTION SYSTEMS</span><span>{{ config?.environmentName || 'CONFIGURATION PENDING' }}</span></footer>
+    </ng-container>
+    <ng-template #noSelection><section class="empty-state"><span class="empty-mark">S</span><h2>Choose a machine to begin</h2><p>Select a device from the production line to view its live performance.</p></section></ng-template>
+  </main>
+</div>
